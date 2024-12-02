@@ -65,7 +65,7 @@ function setLoading(elementId, loading) {
     if (element && loading) {
         element.innerHTML = '<div class="loading">生成中，请稍候...</div>';
     }
-}
+/*  */}
 
 // 检查是否已经登录
 window.onload = function() {
@@ -904,11 +904,496 @@ ${part.prompt}`;
         }
 
         showSuccess('故事剧本生成完成！');
+        
+        // 保存到localStorage
+        saveToLocalStorage('storyScript', fullScript);
+        
         return fullScript;
     } catch (error) {
         console.error('生成故事剧本时出错:', error);
         showError('生成故事剧本失败，请重试');
     }
+}
+
+// API调用函数
+async function callDeepseekAPI(prompt, systemPrompt = '', targetElementId = 'generatedStory') {
+    const maxRetries = 3;
+    let retryCount = 0;
+    let retryDelay = 5000;
+
+    while (retryCount < maxRetries) {
+        try {
+            const response = await fetch('https://api.deepseek.com/v1/chat/completions', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${apiKey}`
+                },
+                body: JSON.stringify({
+                    model: "deepseek-chat",
+                    messages: [
+                        {
+                            role: "system",
+                            content: systemPrompt
+                        },
+                        {
+                            role: "user",
+                            content: prompt + "\n\n请确保生成完整的内容，不要中途截断。如果内容较长，请分多次输出，每次都要完整。"
+                        }
+                    ],
+                    temperature: 0.8,
+                    max_tokens: 4000,
+                    top_p: 0.95,
+                    frequency_penalty: 0.3,
+                    presence_penalty: 0.3,
+                    stream: true
+                })
+            });
+
+            if (!response.ok) {
+                const errorData = await response.json().catch(() => ({}));
+                if (response.status === 401) {
+                    localStorage.removeItem('deepseekApiKey');
+                    location.reload();
+                    throw new Error('API密钥已失效，请重新登录');
+                } else if (response.status === 429) {
+                    const waitTime = Math.min(60 * 60 * 1000, retryDelay);
+                    const minutes = Math.ceil(waitTime / 60000);
+                    
+                    const targetElement = document.getElementById(targetElementId);
+                    if (targetElement) {
+                        const notice = document.createElement('div');
+                        notice.className = 'rate-limit-notice';
+                        notice.innerHTML = `API调用频率限制，正在等待${minutes}分钟后重试...<br>已重试${retryCount + 1}/${maxRetries}次`;
+                        targetElement.appendChild(notice);
+                    }
+
+                    await new Promise(resolve => setTimeout(resolve, waitTime));
+                    retryDelay *= 2;
+                    retryCount++;
+                    continue;
+                }
+                throw new Error(errorData.error?.message || '未知错误');
+            }
+
+            const reader = response.body.getReader();
+            let fullContent = '';
+            const decoder = new TextDecoder();
+
+            while (true) {
+                const {value, done} = await reader.read();
+                if (done) break;
+                
+                const chunk = decoder.decode(value);
+                try {
+                    const lines = chunk.split('\n');
+                    for (const line of lines) {
+                        if (line.startsWith('data: ')) {
+                            const jsonStr = line.slice(6);
+                            if (jsonStr.trim() === '[DONE]') continue;
+                            
+                            const jsonData = JSON.parse(jsonStr);
+                            const content = jsonData.choices[0].delta.content || '';
+                            fullContent += content;
+                            
+                            const targetElement = document.getElementById(targetElementId);
+                            if (targetElement) {
+                                let lastStoryPart = targetElement.querySelector('.story-part:last-child');
+                                if (!lastStoryPart) {
+                                    lastStoryPart = document.createElement('div');
+                                    lastStoryPart.className = 'story-part';
+                                    targetElement.appendChild(lastStoryPart);
+                                }
+                                lastStoryPart.innerHTML = fullContent.replace(/\n/g, '<br>');
+                                targetElement.scrollTop = targetElement.scrollHeight;
+                            }
+                        }
+                    }
+                } catch (e) {
+                    console.error('解析响应时出错:', e);
+                }
+            }
+
+            return fullContent;
+        } catch (error) {
+            console.error('API调用错误:', error);
+            retryCount++;
+            
+            if (retryCount >= maxRetries) {
+                throw new Error(`多次重试后仍然失败: ${error.message}`);
+            }
+            
+            await new Promise(resolve => setTimeout(resolve, retryDelay));
+            retryDelay *= 2;
+        }
+    }
+}
+
+// 分段生成故事
+async function generateStoryInParts(prompt, systemPrompt) {
+    const parts = [
+        {
+            title: "故事梗概和第一章",
+            prompt: `${prompt}\n请只输出故事梗概和第一章的内容。`,
+            selector: "generatedStory"
+        },
+        {
+            title: "第二章和第三章",
+            prompt: `继续上文的故事，请输出第二章和第三章的内容。\n原始设定：\n${prompt}`,
+            selector: "generatedStory"
+        },
+        {
+            title: "第四章和第五章",
+            prompt: `继续上文的故事，请输出第四章和第五章的内容，并在最后总结整个故事的关键视觉场景和情感转折点。\n原始设定：\n${prompt}`,
+            selector: "generatedStory"
+        }
+    ];
+
+    let fullStory = '';
+    const outputElement = document.getElementById('generatedStory');
+    outputElement.innerHTML = ''; // 清空之前的内容
+
+    for (let i = 0; i < parts.length; i++) {
+        const part = parts[i];
+        try {
+            // 显示正在生成的部分
+            const noticeDiv = document.createElement('div');
+            noticeDiv.className = 'generating-notice';
+            noticeDiv.textContent = `正在生成${part.title}...`;
+            outputElement.appendChild(noticeDiv);
+            
+            const content = await callDeepseekAPI(part.prompt, systemPrompt, part.selector);
+            
+            // 移除生成提示
+            noticeDiv.remove();
+            
+            // 添加新内容
+            fullStory += (i > 0 ? '\n\n' : '') + content;
+            
+            // 创建新的内容容器
+            const contentDiv = document.createElement('div');
+            contentDiv.className = 'story-part';
+            contentDiv.innerHTML = content.replace(/\n/g, '<br>');
+            
+            // 添加到输出元素
+            outputElement.appendChild(contentDiv);
+            
+            // 滚动到底部
+            outputElement.scrollTop = outputElement.scrollHeight;
+        } catch (error) {
+            console.error(`生成${part.title}时出错:`, error);
+            const errorDiv = document.createElement('div');
+            errorDiv.className = 'error-notice';
+            errorDiv.textContent = `生成${part.title}时出错: ${error.message}`;
+            outputElement.appendChild(errorDiv);
+        }
+    }
+
+    return fullStory;
+}
+
+// 保存历史背景
+function saveHistoryBackground() {
+    const background = document.getElementById('historyInput').value.trim();
+    if (!background) {
+        showError('请输入历史背景');
+        return;
+    }
+    historyBackground = background;
+    showSuccess('历史背景已保存，请继续设定角色');
+}
+
+// 添加角色表单
+function addCharacterForm() {
+    const characterList = document.getElementById('characterList');
+    const characterCount = characterList.children.length;
+    const characterContainer = document.createElement('div');
+    characterContainer.className = 'character-container';
+    characterContainer.innerHTML = `
+        <div class="character-header">
+            <h3>角色 ${characterCount + 1}</h3>
+            <button class="delete-character-btn" onclick="deleteCharacter(this)">
+                <i class="fas fa-trash"></i>
+            </button>
+        </div>
+        <div class="character-fields">
+            <div class="input-group">
+                <label>角色名称：</label>
+                <input type="text" class="character-name" name="characterName${characterCount}" placeholder="输入角色名称">
+            </div>
+            <div class="input-group">
+                <label>性格特点：</label>
+                <input type="text" class="character-personality" name="characterPersonality${characterCount}" placeholder="描述角色的性格特点">
+            </div>
+            <div class="input-group">
+                <label>外貌特征：</label>
+                <input type="text" class="character-appearance" name="characterAppearance${characterCount}" placeholder="描述角色的外貌特征">
+            </div>
+            <div class="input-group">
+                <label>背景故事：</label>
+                <input type="text" class="character-background" name="characterBackground${characterCount}" placeholder="描述角色的背景故事">
+            </div>
+        </div>
+    `;
+    characterList.appendChild(characterContainer);
+}
+
+// 删除角色
+function deleteCharacter(button) {
+    const container = button.closest('.character-container');
+    container.remove();
+    // 更新剩余角色的编号
+    const characterContainers = document.querySelectorAll('.character-container');
+    characterContainers.forEach((container, index) => {
+        container.querySelector('h3').textContent = `角色 ${index + 1}`;
+    });
+}
+
+// 收集角色信息
+function collectCharacters() {
+    const characters = [];
+    const characterContainers = document.querySelectorAll('.character-container');
+    
+    characterContainers.forEach((container, index) => {
+        const name = container.querySelector('.character-name').value;
+        const personality = container.querySelector('.character-personality').value;
+        const appearance = container.querySelector('.character-appearance').value;
+        const background = container.querySelector('.character-background').value;
+        
+        if (name && (personality || appearance || background)) {
+            characters.push({
+                name,
+                personality,
+                appearance,
+                background
+            });
+        }
+    });
+    
+    return characters;
+}
+
+// 使用角色信息生成故事
+async function generateStoryWithCharacters() {
+    try {
+        const historyInput = document.getElementById('historyInput').value;
+        if (!historyInput) {
+            showError('请先输入历史背景');
+            return;
+        }
+
+        // 获取所有角色设定
+        const characterSettings = collectCharacters();
+
+        if (characterSettings.length === 0) {
+            showError('请至少添加一个角色设定');
+            return;
+        }
+
+        const outputElement = document.getElementById('generatedStory');
+        outputElement.innerHTML = ''; // 清空之前的内容
+
+        // 构建角色描述
+        const characterDescriptions = characterSettings.map((char, index) => {
+            return `角色${index + 1}：
+姓名：${char.name}
+性格特点：${char.personality || '未设定'}
+外貌特征：${char.appearance || '未设定'}
+背景故事：${char.background || '未设定'}`;
+        }).join('\n\n');
+
+        const systemPrompt = `你是一位专业的儿童漫画故事创作者，擅长创作适合小学生阅读的有趣故事。
+请注意以下要求：
+1. 语言要简单易懂，避免使用复杂词汇
+2. 故事要富有教育意义和正面价值观
+3. 情节要生动有趣，富有想象力
+4. 人物形象要鲜明，性格要积极向上
+5. 避免暴力、恐怖等不适合儿童的内容
+6. 故事要有清晰的起承转合结构
+7. 每个部分要按照指定格式输出
+8. 必须使用所有提供的角色，确保每个角色都有其独特的表现和发展`;
+
+        const prompt = `请基于以下历史背景和角色设定创作一个适合小学生阅读的漫画故事：
+
+历史背景：
+${historyInput}
+
+角色设定：
+${characterDescriptions}
+
+请严格按照以下格式输出故事内容，并确保所有角色都在故事中得到充分展现：
+
+【故事标题】
+[根据所有角色特点和历史背景创作一个吸引小学生的故事标题]
+
+【故事梗概】
+[用2-3句话概括故事的主要内容，提及所有主要角色]
+
+【主要人物】
+${characterSettings.map(char => `- ${char.name}：
+  性格特点：${char.personality || '未设定'}
+  在故事中的角色：[描述该角色在故事中的定位和作用]`).join('\n')}
+
+【故事正文】
+第一章：相遇
+[描写故事的开始，介绍所有角色是如何相遇或联系在一起的，200-300字]
+
+第二章：冒险开始
+[描写主要冲突的出现，展示每个角色面对挑战时的不同反应和特点，200-300字]
+
+第三章：团队合作
+[描写角色们如何互相配合解决问题，突出每个角色的独特贡献，200-300字]
+
+第四章：圆满结局
+[描写故事的结局，展示每个角色的成长和收获，200-300字]
+
+【每个角色的成长】
+${characterSettings.map(char => `- ${char.name}的收获：
+  [描述这个角色在故事中学到了什么，有什么成长]`).join('\n')}
+
+【故事主旨】
+[用一句话总结这个故事想要传达的道理或价值观]
+
+【适合年龄】
+[建议阅读年龄段，例如：8-12岁]
+
+请确保：
+1. 每个角色都有独特的性格特点和故事线
+2. 角色之间有丰富的互动和对手戏
+3. 故事情节符合历史背景
+4. 每个章节都要突出不同角色的表现
+5. 结局要体现所有角色的成长`;
+
+        // 使用自定义的API调用函数
+        const content = await callDeepseekAPI(prompt, systemPrompt, 'generatedStory');
+        
+        // 格式化显示内容
+        const formattedContent = content.replace(/【/g, '<h3>【').replace(/】/g, '】</h3>')
+            .replace(/\n/g, '<br>')
+            .replace(/第[一二三四]章：[^\n]+/g, match => `<h4>${match}</h4>`);
+        
+        outputElement.innerHTML = formattedContent;
+        
+        showSuccess('故事生成完成！');
+        return content;
+    } catch (error) {
+        console.error('生成故事时出错:', error);
+        showError('生成故事失败，请重试');
+    }
+}
+
+// 添加带重试机制的API调用函数
+async function callDeepseekAPIWithRetry(prompt, systemPrompt, target, maxTokens = 2000, maxRetries = 3, params = {}) {
+    let lastError;
+    for (let i = 0; i < maxRetries; i++) {
+        try {
+            // 确保API密钥存在
+            if (!apiKey) {
+                throw new Error('未设置API密钥，请先设置API密钥');
+            }
+
+            const response = await fetch('https://api.deepseek.com/v1/chat/completions', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${apiKey}`
+                },
+                body: JSON.stringify({
+                    model: "deepseek-chat",
+                    messages: [
+                        {
+                            "role": "system",
+                            "content": systemPrompt
+                        },
+                        {
+                            "role": "user",
+                            "content": prompt
+                        }
+                    ],
+                    temperature: params.temperature || 0.8,
+                    max_tokens: maxTokens,
+                    top_p: params.top_p || 0.95,
+                    presence_penalty: params.presence_penalty || 0,
+                    frequency_penalty: params.frequency_penalty || 0,
+                    stream: true
+                })
+            });
+
+            if (!response.ok) {
+                if (response.status === 401) {
+                    localStorage.removeItem('apiKey');
+                    apiKey = null;
+                    document.getElementById('loginContainer').style.display = 'block';
+                    document.getElementById('mainContainer').style.display = 'none';
+                    throw new Error('API密钥无效，请重新设置API密钥');
+                } else if (response.status === 429) {
+                    // 处理速率限制错误
+                    const retryAfter = response.headers.get('Retry-After') || 60; // 默认1分钟
+                    throw new Error(`速率限制，请等待${retryAfter}秒后重试`);
+                }
+                throw new Error(`API请求失败: ${response.status}`);
+            }
+
+            const reader = response.body.getReader();
+            const decoder = new TextDecoder();
+            let content = '';
+            let outputElement = document.getElementById(target);
+
+            while (true) {
+                const { done, value } = await reader.read();
+                if (done) break;
+
+                const chunk = decoder.decode(value);
+                const lines = chunk.split('\n');
+
+                for (const line of lines) {
+                    if (line.trim() === '') continue;
+                    if (line.startsWith('data: ')) {
+                        const data = line.slice(6);
+                        if (data === '[DONE]') continue;
+                        try {
+                            const parsed = JSON.parse(data);
+                            const text = parsed.choices[0].delta.content || '';
+                            content += text;
+                            if (outputElement) {
+                                outputElement.innerHTML = content.replace(/\n/g, '<br>');
+                                outputElement.scrollTop = outputElement.scrollHeight;
+                            }
+                        } catch (e) {
+                            console.error('解析响应数据时出错:', e);
+                        }
+                    }
+                }
+            }
+
+            return content;
+        } catch (error) {
+            console.error(`API调用失败 (尝试 ${i + 1}/${maxRetries}):`, error);
+            lastError = error;
+            
+            // 如果是认证错误，立即停止重试
+            if (error.message.includes('API密钥无效')) {
+                throw error;
+            }
+            
+            // 如果是速率限制错误，显示等待时间
+            if (error.message.includes('速率限制')) {
+                showError(error.message);
+                // 等待指定时间后再重试
+                const waitTime = parseInt(error.message.match(/\d+/)[0]) * 1000;
+                await new Promise(resolve => setTimeout(resolve, waitTime));
+                continue;
+            }
+            
+            // 其他错误则使用指数退避重试
+            if (i < maxRetries - 1) {
+                const waitTime = Math.pow(2, i) * 1000;
+                showError(`请求失败，${waitTime/1000}秒后重试...`);
+                await new Promise(resolve => setTimeout(resolve, waitTime));
+            }
+        }
+    }
+    throw lastError;
 }
 
 // 生成角色
@@ -1180,7 +1665,10 @@ ${characters.map(char =>
 async function generateStoryboardInParts(script) {
     try {
         // 将剧本按场景分割
-        const scenes = script.split('【场景序号】').filter(scene => scene.trim());
+        const scenes = script.split(/场景\s*\d+[：:]/g)
+            .filter(scene => scene.trim()) // 移除空场景
+            .map(scene => scene.trim());
+        
         if (scenes.length === 0) {
             throw new Error('未能识别到有效的场景内容，请检查剧本格式');
         }
@@ -1194,7 +1682,7 @@ async function generateStoryboardInParts(script) {
 
         for (const scene of scenes) {
             // 添加当前场景到当前部分
-            currentPart += '【场景序号】' + scene;
+            currentPart += '场景' + scene;
 
             // 如果当前部分达到一定长度或是最后一个场景，则生成分镜
             if (currentPart.length >= 1500 || scene === scenes[scenes.length - 1]) {
@@ -1270,88 +1758,89 @@ async function generateStoryboardInParts(script) {
 // 生成分镜脚本
 async function generateStoryboard() {
     try {
-        const outputElement = document.getElementById('storyboard');
         const scriptElement = document.getElementById('storyScript');
-        
         if (!scriptElement) {
             throw new Error('未找到剧本元素');
         }
         
-        // 检查剧本内容
-        let script = '';
-        
-        // 如果是textarea或input元素
-        if (scriptElement.value !== undefined) {
-            script = scriptElement.value.trim();
-        } 
-        // 如果是div或其他元素
-        else if (scriptElement.innerHTML) {
-            // 移除HTML标签
-            script = scriptElement.innerHTML.replace(/<[^>]*>/g, '').trim();
-        }
-        // 如果是文本内容
-        else if (scriptElement.textContent) {
-            script = scriptElement.textContent.trim();
-        }
-
-        if (!script) {
+        const script = scriptElement.innerHTML;
+        if (!script.trim()) {
             throw new Error('请先完成剧本的创作（第四步）');
         }
 
-        showLoading('正在准备生成分镜脚本...');
-
-        // 分批生成分镜
-        const response = await generateStoryboardInParts(script);
-
-        if (!response) {
-            throw new Error('分镜脚本生成失败，请重试');
+        showLoading('正在解析剧本场景...');
+        
+        // 拆分场景
+        const scenes = splitScriptIntoScenes(script);
+        if (!scenes.length) {
+            throw new Error('未能识别到有效的场景');
         }
 
-        // 解析并显示在卡片中
-        parseAndDisplayStoryboard(response);
-        
-        // 同时保存到原始容器中
-        if (outputElement) {
-            outputElement.innerHTML = formatStoryboardContent(response);
+        const storyboardElement = document.getElementById('storyboard');
+        if (storyboardElement) {
+            storyboardElement.innerHTML = ''; // 清空现有内容
         }
-        
-        showSuccess('所有分镜脚本创作完成！');
-        
-        // 保存到localStorage
-        saveToLocalStorage('storyboard', response);
-        
-        // 添加帮助信息
-        const helpDiv = document.createElement('div');
-        helpDiv.className = 'help-text';
-        helpDiv.innerHTML = `
-            <h4>分镜说明：</h4>
-            <ul>
-                <li><strong>ELS (Extreme Long Shot)</strong>: 超远景，展现宏大场面</li>
-                <li><strong>LS (Long Shot)</strong>: 远景，环境全貌</li>
-                <li><strong>FS (Full Shot)</strong>: 全景，完整动作</li>
-                <li><strong>MS (Medium Shot)</strong>: 中景，人物半身</li>
-                <li><strong>CU (Close Up)</strong>: 特写，面部表情</li>
-                <li><strong>ECU (Extreme Close Up)</strong>: 超特写，局部细节</li>
-            </ul>
+
+        // 显示进度容器
+        const progressContainer = document.createElement('div');
+        progressContainer.className = 'progress-container';
+        progressContainer.innerHTML = `
+            <div class="progress-text">正在生成分镜...</div>
+            <div class="progress-bar">
+                <div class="progress-fill"></div>
+            </div>
         `;
-        
-        if (outputElement) {
-            const parentElement = outputElement.parentElement;
-            if (parentElement.querySelector('.help-text')) {
-                parentElement.querySelector('.help-text').remove();
+        storyboardElement.appendChild(progressContainer);
+
+        // 逐个处理场景
+        for (let i = 0; i < scenes.length; i++) {
+            const progressText = progressContainer.querySelector('.progress-text');
+            const progressFill = progressContainer.querySelector('.progress-fill');
+            
+            progressText.textContent = `正在处理第 ${i + 1} 个场景，共 ${scenes.length} 个场景...`;
+            progressFill.style.width = `${((i + 1) / scenes.length) * 100}%`;
+
+            try {
+                const result = await generateSceneStoryboard(scenes[i], i);
+                
+                // 创建分镜卡片
+                const card = document.createElement('div');
+                card.className = 'storyboard-card';
+                card.innerHTML = `
+                    <div class="scene-header">
+                        <h3>场景 ${result.sceneIndex}</h3>
+                    </div>
+                    <div class="scene-content">
+                        ${formatStoryboardContent(result.content)}
+                    </div>
+                `;
+                storyboardElement.appendChild(card);
+
+                // 保存到localStorage
+                saveToLocalStorage(`storyboard_scene_${i}`, result);
+                
+                // 添加延迟避免API限制
+                await new Promise(resolve => setTimeout(resolve, 2000));
+            } catch (error) {
+                console.error(`场景 ${i + 1} 处理失败:`, error);
+                showError(`场景 ${i + 1} 生成失败，请重试`);
+                return;
             }
-            parentElement.appendChild(helpDiv);
         }
+
+        // 移除进度显示
+        progressContainer.remove();
         
-        return response;
+        showSuccess('所有分镜生成完成！');
+        
+        // 保存完整的分镜内容
+        saveToLocalStorage('storyboard_complete', storyboardElement.innerHTML);
+        
+        return true;
     } catch (error) {
         console.error('创作分镜脚本时出错:', error);
-        const outputElement = document.getElementById('storyboard');
-        if (outputElement) {
-            outputElement.innerHTML = '';
-        }
         showError(error.message || '分镜脚本创作遇到了问题，请重试');
-        return null;
+        return false;
     }
 }
 
@@ -1580,118 +2069,288 @@ function loadSavedStoryboard() {
 // 页面加载时初始化
 document.addEventListener('DOMContentLoaded', function() {
     loadSavedStoryboard();
+    
+    // 分镜生成按钮事件监听
+    const generateStoryboardBtn = document.getElementById('generateStoryboardBtn');
+    if (generateStoryboardBtn) {
+        generateStoryboardBtn.addEventListener('click', async function() {
+            try {
+                showLoading('正在生成分镜...');
+                await generateStoryboard();
+            } catch (error) {
+                console.error('生成分镜时出错:', error);
+                showError(error.message || '生成分镜失败，请重试');
+            } finally {
+                hideLoading();
+            }
+        });
+    }
 });
 
-// 添加样式
-const style = document.createElement('style');
-style.textContent = `
-.generating-notice {
-    background-color: #fff3cd;
-    color: #856404;
-    border: 1px solid #ffeeba;
-    padding: 15px;
-    margin: 15px 0;
-    border-radius: 8px;
-    text-align: center;
+// 本地存储工具函数
+function saveToLocalStorage(key, data) {
+    try {
+        if (typeof data === 'object') {
+            localStorage.setItem(key, JSON.stringify(data));
+        } else {
+            localStorage.setItem(key, data);
+        }
+        return true;
+    } catch (error) {
+        console.error('保存到本地存储时出错:', error);
+        return false;
+    }
 }
 
-.error-notice {
-    background-color: #f8d7da;
-    color: #721c24;
-    border: 1px solid #f5c6cb;
-    padding: 15px;
-    margin: 15px 0;
-    border-radius: 8px;
-    text-align: center;
+function loadFromLocalStorage(key) {
+    try {
+        const data = localStorage.getItem(key);
+        if (!data) return null;
+        
+        try {
+            // 尝试解析JSON
+            return JSON.parse(data);
+        } catch {
+            // 如果不是JSON，直接返回字符串
+            return data;
+        }
+    } catch (error) {
+        console.error('从本地存储加载时出错:', error);
+        return null;
+    }
 }
 
-.story-part {
-    margin: 20px 0;
-    padding: 20px;
-    background-color: #fff;
-    border-radius: 8px;
-    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+function removeFromLocalStorage(key) {
+    try {
+        localStorage.removeItem(key);
+        return true;
+    } catch (error) {
+        console.error('从本地存储删除时出错:', error);
+        return false;
+    }
 }
 
-.story-part + .story-part {
-    margin-top: 30px;
+// 自动保存功能
+function setupAutoSave() {
+    const autoSaveInterval = 60000; // 每分钟自动保存
+    
+    setInterval(() => {
+        const currentState = {
+            historyBackground: document.getElementById('historyInput')?.value || '',
+            characters: collectCharacters(),
+            story: document.getElementById('storyOutput')?.value || '',
+            script: document.getElementById('storyScript')?.innerHTML || '',
+            storyboard: document.getElementById('storyboard')?.innerHTML || ''
+        };
+        
+        saveToLocalStorage('mangaState', currentState);
+    }, autoSaveInterval);
 }
 
-.success-notice {
-    background-color: #d4edda;
-    color: #155724;
-    padding: 10px;
-    margin: 10px 0;
-    border-radius: 4px;
-    text-align: center;
+// 恢复保存的状态
+function restoreSavedState() {
+    const savedState = loadFromLocalStorage('mangaState');
+    if (!savedState) return;
+    
+    try {
+        // 恢复历史背景
+        const historyInput = document.getElementById('historyInput');
+        if (historyInput && savedState.historyBackground) {
+            historyInput.value = savedState.historyBackground;
+        }
+        
+        // 恢复故事
+        const storyOutput = document.getElementById('storyOutput');
+        if (storyOutput && savedState.story) {
+            storyOutput.value = savedState.story;
+        }
+        
+        // 恢复剧本
+        const storyScript = document.getElementById('storyScript');
+        if (storyScript && savedState.script) {
+            storyScript.innerHTML = savedState.script;
+        }
+        
+        // 恢复分镜
+        const storyboard = document.getElementById('storyboard');
+        if (storyboard && savedState.storyboard) {
+            storyboard.innerHTML = savedState.storyboard;
+        }
+        
+        // 恢复角色信息
+        if (savedState.characters && Array.isArray(savedState.characters)) {
+            characters = savedState.characters;
+            // 重新渲染角色列表
+            const characterList = document.getElementById('characterList');
+            if (characterList) {
+                characterList.innerHTML = '';
+                characters.forEach(() => addCharacterForm());
+            }
+        }
+    } catch (error) {
+        console.error('恢复保存的状态时出错:', error);
+        showError('恢复之前的工作时遇到问题');
+    }
 }
 
-.output-box {
-    position: relative;
+// 页面加载时初始化自动保存
+document.addEventListener('DOMContentLoaded', function() {
+    setupAutoSave();
+    restoreSavedState();
+});
+
+// 将剧本拆分为场景
+function splitScriptIntoScenes(script) {
+    // 移除HTML标签
+    const plainText = script.replace(/<[^>]*>/g, '');
+    
+    // 按场景分割
+    const scenes = plainText.split(/场景\s*\d+[：:]/g)
+        .filter(scene => scene.trim()) // 移除空场景
+        .map(scene => scene.trim());
+    
+    return scenes;
 }
 
-.rate-limit-notice {
-    background-color: #e2e3e5;
-    color: #383d41;
-    border: 1px solid #d6d8db;
-    padding: 15px;
-    margin: 15px 0;
-    border-radius: 8px;
-    text-align: center;
-    animation: pulse 2s infinite;
+// 生成单个场景的分镜
+async function generateSceneStoryboard(scene, sceneIndex) {
+    const prompt = `请为以下场景创建详细的分镜脚本。要求：
+1. 使用专业的分镜术语和格式
+2. 每个分镜需包含：
+   - 画面构图（俯视、平视、仰视等）
+   - 场景布局描述
+   - 人物表情和动作
+   - 对话气泡位置（如果有对话）
+   - 特效和背景处理
+3. 注意以下要点：
+   - 画面的节奏感和张力
+   - 分镜大小的变化（大格、小格的搭配）
+   - 人物在画面中的位置和比例
+   - 连续分镜之间的流畅过渡
+   - 重要情节的重点突出
+4. 每个分镜描述要简洁但具体
+5. 考虑漫画的视觉表现力和阅读体验
+
+场景内容：${scene}
+
+请按照以下格式输出每个分镜：
+分镜1：[画面布局] - [构图角度] - [具体描述]
+分镜2：[画面布局] - [构图角度] - [具体描述]
+...以此类推`;
+
+    try {
+        const response = await callDeepseekAPI(prompt);
+        if (!response) throw new Error('分镜生成失败');
+        
+        return {
+            sceneIndex: sceneIndex + 1,
+            content: response
+        };
+    } catch (error) {
+        console.error(`场景 ${sceneIndex + 1} 分镜生成失败:`, error);
+        throw error;
+    }
 }
 
-.script-separator {
-    margin: 20px 0;
-    opacity: 0.5;
+// 分批生成所有场景的分镜
+async function generateStoryboard() {
+    try {
+        const scriptElement = document.getElementById('storyScript');
+        if (!scriptElement) {
+            throw new Error('未找到剧本元素');
+        }
+        
+        const script = scriptElement.innerHTML;
+        if (!script.trim()) {
+            throw new Error('请先完成剧本的创作（第四步）');
+        }
+
+        showLoading('正在解析剧本场景...');
+        
+        // 拆分场景
+        const scenes = splitScriptIntoScenes(script);
+        if (!scenes.length) {
+            throw new Error('未能识别到有效的场景');
+        }
+
+        const storyboardElement = document.getElementById('storyboard');
+        if (storyboardElement) {
+            storyboardElement.innerHTML = ''; // 清空现有内容
+        }
+
+        // 显示进度容器
+        const progressContainer = document.createElement('div');
+        progressContainer.className = 'progress-container';
+        progressContainer.innerHTML = `
+            <div class="progress-text">正在生成分镜...</div>
+            <div class="progress-bar">
+                <div class="progress-fill"></div>
+            </div>
+        `;
+        storyboardElement.appendChild(progressContainer);
+
+        // 逐个处理场景
+        for (let i = 0; i < scenes.length; i++) {
+            const progressText = progressContainer.querySelector('.progress-text');
+            const progressFill = progressContainer.querySelector('.progress-fill');
+            
+            progressText.textContent = `正在处理第 ${i + 1} 个场景，共 ${scenes.length} 个场景...`;
+            progressFill.style.width = `${((i + 1) / scenes.length) * 100}%`;
+
+            try {
+                const result = await generateSceneStoryboard(scenes[i], i);
+                
+                // 创建分镜卡片
+                const card = document.createElement('div');
+                card.className = 'storyboard-card';
+                card.innerHTML = `
+                    <div class="scene-header">
+                        <h3>场景 ${result.sceneIndex}</h3>
+                    </div>
+                    <div class="scene-content">
+                        ${formatStoryboardContent(result.content)}
+                    </div>
+                `;
+                storyboardElement.appendChild(card);
+
+                // 保存到localStorage
+                saveToLocalStorage(`storyboard_scene_${i}`, result);
+                
+                // 添加延迟避免API限制
+                await new Promise(resolve => setTimeout(resolve, 2000));
+            } catch (error) {
+                console.error(`场景 ${i + 1} 处理失败:`, error);
+                showError(`场景 ${i + 1} 生成失败，请重试`);
+                return;
+            }
+        }
+
+        // 移除进度显示
+        progressContainer.remove();
+        
+        showSuccess('所有分镜生成完成！');
+        
+        // 保存完整的分镜内容
+        saveToLocalStorage('storyboard_complete', storyboardElement.innerHTML);
+        
+        return true;
+    } catch (error) {
+        console.error('创作分镜脚本时出错:', error);
+        showError(error.message || '分镜脚本创作遇到了问题，请重试');
+        return false;
+    }
 }
 
-.script-part {
-    margin: 20px 0;
-    padding: 20px;
-    background-color: #fff;
-    border-radius: 8px;
-    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+// 格式化分镜内容
+function formatStoryboardContent(content) {
+    return content
+        .replace(/^(LS|MS|CU|ECU|ELS|FS)[\s:：]/gm, match => 
+            `<div class="shot-type">${match.trim()}</div>`)
+        .replace(/【([^】]+)】/g, '<div class="scene-description">$1</div>')
+        .replace(/（([^）]+)）/g, '<div class="action-note">$1</div>')
+        .replace(/^(\w+[：:])(.+)$/gm, '<div class="dialogue"><span class="character">$1</span>$2</div>')
+        .replace(/\n/g, '<br>');
 }
-
-.script-part h3 {
-    color: var(--primary-color);
-    margin-bottom: 15px;
-    padding-bottom: 10px;
-    border-bottom: 2px solid var(--primary-color);
-}
-
-.storyboard-separator {
-    margin: 25px 0;
-    opacity: 0.5;
-}
-
-.storyboard-part {
-    margin: 25px 0;
-    padding: 25px;
-    background-color: #fff;
-    border-radius: 8px;
-    box-shadow: 0 3px 6px rgba(0,0,0,0.1);
-}
-
-.storyboard-part h3 {
-    color: var(--primary-color);
-    margin-bottom: 20px;
-    padding-bottom: 12px;
-    border-bottom: 2px solid var(--primary-color);
-    font-size: 1.4em;
-}
-
-.storyboard-content {
-    line-height: 1.8;
-    font-size: 1.1em;
-}
-
-.storyboard-content strong {
-    color: var(--secondary-color);
-}
-`;
-document.head.appendChild(style);
 
 // 生成故事
 async function generateStory() {
@@ -1788,8 +2447,9 @@ ${character}
         const formattedResponse = response
             .replace(/【/g, '<h3>【')
             .replace(/】/g, '】</h3>')
-            .replace(/\n/g, '<br>');
-
+            .replace(/\n/g, '<br>')
+            .replace(/第[一二三四]章：[^\n]+/g, match => `<h4>${match}</h4>`);
+        
         outputElement.innerHTML = formattedResponse;
         showSuccess('故事创作完成！');
         
@@ -1914,3 +2574,5 @@ function addSceneMarkers(scriptElement) {
         scene.prepend(marker);
     });
 }
+
+```

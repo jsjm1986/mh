@@ -87,54 +87,24 @@
 
         <!-- 第五步：分镜脚本 -->
         <div class="step-container" id="step5">
-            <h2><i class="fas fa-film"></i> 第五步：分镜脚本</h2>
-            <div class="storyboard-section">
-                <div class="button-group">
-                    <button class="generate-btn" onclick="generateStoryboard()">
-                        <i class="fas fa-magic"></i> AI生成分镜
-                    </button>
-                    <button class="save-btn" onclick="saveStoryboard()">
-                        <i class="fas fa-save"></i> 保存HTML
-                    </button>
-                    <button class="save-btn" onclick="saveStoryboardAsText()">
-                        <i class="fas fa-file-alt"></i> 保存文本
+            <div class="step-content" id="step5Content">
+                <h2>第五步：生成分镜</h2>
+                <div class="step-description">
+                    <p>根据生成的剧本，自动创建分镜。每个场景都会被转换为专业的分镜描述。</p>
+                </div>
+                <div class="control-panel">
+                    <button id="generateStoryboardBtn" class="action-button">
+                        <i class="fas fa-film"></i> 生成分镜
                     </button>
                 </div>
-                <div id="storyboard-display" class="storyboard-display">
-                    <div class="storyboard-cards">
-                        <!-- 场景信息卡片 -->
-                        <div class="info-card scene-info">
-                            <h3><i class="fas fa-film"></i> 场景信息</h3>
-                            <div id="scene-content"></div>
-                        </div>
-                        <!-- 分格信息卡片 -->
-                        <div class="info-card frame-info">
-                            <h3><i class="fas fa-th-large"></i> 分格信息</h3>
-                            <div id="frame-content"></div>
-                        </div>
-                        <!-- 构图要素卡片 -->
-                        <div class="info-card composition-info">
-                            <h3><i class="fas fa-camera"></i> 构图要素</h3>
-                            <div id="composition-content"></div>
-                        </div>
-                        <!-- 画面重点卡片 -->
-                        <div class="info-card focus-info">
-                            <h3><i class="fas fa-bullseye"></i> 画面重点</h3>
-                            <div id="focus-content"></div>
-                        </div>
-                        <!-- 运动表现卡片 -->
-                        <div class="info-card motion-info">
-                            <h3><i class="fas fa-running"></i> 运动表现</h3>
-                            <div id="motion-content"></div>
-                        </div>
-                        <!-- 文字配置卡片 -->
-                        <div class="info-card text-info">
-                            <h3><i class="fas fa-font"></i> 文字配置</h3>
-                            <div id="text-content"></div>
-                        </div>
-                    </div>
+                <div id="storyboard" class="storyboard-container">
+                    <!-- 分镜内容将在这里动态生成 -->
                 </div>
-                <div id="storyboard" class="storyboard-container"></div>
+                <div class="step-navigation">
+                    <button class="nav-button prev-button" onclick="showStep(4)">
+                        <i class="fas fa-arrow-left"></i> 上一步
+                    </button>
+                </div>
             </div>
         </div>
     </div>
