@@ -1,0 +1,145 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>漫画故事创作平台</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.4/css/all.min.css">
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <!-- 登录界面 -->
+    <div id="loginContainer" class="login-container">
+        <div class="login-box">
+            <h1><i class="fas fa-book-open"></i> 漫画故事创作平台</h1>
+            <div class="input-group">
+                <label for="apiKey"><i class="fas fa-key"></i> 请输入Deepseek API密钥</label>
+                <input type="password" id="apiKey" placeholder="输入您的API密钥">
+                <p class="hint">如何获取API密钥？<a href="https://platform.deepseek.com/" target="_blank">访问Deepseek平台 <i class="fas fa-external-link-alt"></i></a></p>
+            </div>
+            <button onclick="verifyApiKey()"><i class="fas fa-sign-in-alt"></i> 开始创作</button>
+        </div>
+    </div>
+
+    <!-- 主界面 -->
+    <div id="mainContainer" class="container" style="display: none;">
+        <h1><i class="fas fa-feather-alt"></i> 漫画故事创作平台</h1>
+        
+        <!-- 第一步：历史背景 -->
+        <div class="step-container" id="step1">
+            <h2><i class="fas fa-history"></i> 第一步：输入历史故事背景</h2>
+            <div class="form-group">
+                <textarea id="historyInput" placeholder="请描述故事发生的历史背景、时代特征、重要事件等..."></textarea>
+                <div class="button-group">
+                    <button onclick="generateHistoricalStory()" class="generate-btn">
+                        <i class="fas fa-lightbulb"></i> AI生成典故
+                    </button>
+                    <button onclick="saveHistoryBackground()" class="save-btn">
+                        <i class="fas fa-save"></i> 保存背景
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- 第二步：角色设定 -->
+        <div class="step-container" id="step2">
+            <h2><i class="fas fa-users"></i> 第二步：角色设定</h2>
+            <div class="character-form">
+                <div class="character-list" id="characterList">
+                    <!-- 角色列表将在这里动态生成 -->
+                </div>
+                <div class="button-group">
+                    <button class="add-character-btn" onclick="addCharacterForm()">
+                        <i class="fas fa-user-plus"></i> 添加角色
+                    </button>
+                    <button class="generate-character-btn" onclick="generateCharacter()">
+                        <i class="fas fa-magic"></i> AI生成角色
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- 第三步：生成故事 -->
+        <div class="step-container" id="step3">
+            <h2><i class="fas fa-book"></i> 第三步：生成故事</h2>
+            <div class="story-section">
+                <div class="button-group">
+                    <button class="generate-story-btn" onclick="generateStoryWithCharacters()">
+                        <i class="fas fa-magic"></i> 生成故事
+                    </button>
+                </div>
+                <div id="generatedStory" class="output-box"></div>
+            </div>
+        </div>
+
+        <!-- 第四步：故事剧本 -->
+        <div class="step-container" id="step4">
+            <h2><i class="fas fa-theater-masks"></i> 第四步：故事剧本</h2>
+            <div class="script-section">
+                <div class="button-group">
+                    <button class="create-script-btn" onclick="createStoryScript()">
+                        <i class="fas fa-scroll"></i> 创建剧本
+                    </button>
+                </div>
+                <div id="storyScript" class="output-box"></div>
+            </div>
+        </div>
+
+        <!-- 第五步：分镜脚本 -->
+        <div class="step-container" id="step5">
+            <h2><i class="fas fa-film"></i> 第五步：分镜脚本</h2>
+            <div class="storyboard-section">
+                <div class="button-group">
+                    <button class="generate-btn" onclick="generateStoryboard()">
+                        <i class="fas fa-magic"></i> AI生成分镜
+                    </button>
+                    <button class="save-btn" onclick="saveStoryboard()">
+                        <i class="fas fa-save"></i> 保存HTML
+                    </button>
+                    <button class="save-btn" onclick="saveStoryboardAsText()">
+                        <i class="fas fa-file-alt"></i> 保存文本
+                    </button>
+                </div>
+                <div id="storyboard-display" class="storyboard-display">
+                    <div class="storyboard-cards">
+                        <!-- 场景信息卡片 -->
+                        <div class="info-card scene-info">
+                            <h3><i class="fas fa-film"></i> 场景信息</h3>
+                            <div id="scene-content"></div>
+                        </div>
+                        <!-- 分格信息卡片 -->
+                        <div class="info-card frame-info">
+                            <h3><i class="fas fa-th-large"></i> 分格信息</h3>
+                            <div id="frame-content"></div>
+                        </div>
+                        <!-- 构图要素卡片 -->
+                        <div class="info-card composition-info">
+                            <h3><i class="fas fa-camera"></i> 构图要素</h3>
+                            <div id="composition-content"></div>
+                        </div>
+                        <!-- 画面重点卡片 -->
+                        <div class="info-card focus-info">
+                            <h3><i class="fas fa-bullseye"></i> 画面重点</h3>
+                            <div id="focus-content"></div>
+                        </div>
+                        <!-- 运动表现卡片 -->
+                        <div class="info-card motion-info">
+                            <h3><i class="fas fa-running"></i> 运动表现</h3>
+                            <div id="motion-content"></div>
+                        </div>
+                        <!-- 文字配置卡片 -->
+                        <div class="info-card text-info">
+                            <h3><i class="fas fa-font"></i> 文字配置</h3>
+                            <div id="text-content"></div>
+                        </div>
+                    </div>
+                </div>
+                <div id="storyboard" class="storyboard-container"></div>
+            </div>
+        </div>
+    </div>
+
+    <script src="config.js"></script>
+    <script src="app.js"></script>
+</body>
+</html>
