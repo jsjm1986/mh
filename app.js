@@ -1665,10 +1665,7 @@ ${characters.map(char =>
 async function generateStoryboardInParts(script) {
     try {
         // 将剧本按场景分割
-        const scenes = script.split(/场景\s*\d+[：:]/g)
-            .filter(scene => scene.trim()) // 移除空场景
-            .map(scene => scene.trim());
-        
+        const scenes = script.split('【场景序号】').filter(scene => scene.trim());
         if (scenes.length === 0) {
             throw new Error('未能识别到有效的场景内容，请检查剧本格式');
         }
@@ -1682,7 +1679,7 @@ async function generateStoryboardInParts(script) {
 
         for (const scene of scenes) {
             // 添加当前场景到当前部分
-            currentPart += '场景' + scene;
+            currentPart += '【场景序号】' + scene;
 
             // 如果当前部分达到一定长度或是最后一个场景，则生成分镜
             if (currentPart.length >= 1500 || scene === scenes[scenes.length - 1]) {
@@ -1770,7 +1767,7 @@ async function generateStoryboard() {
 
         showLoading('正在解析剧本场景...');
         
-        // 拆分场景
+        // 分割场景
         const scenes = splitScriptIntoScenes(script);
         if (!scenes.length) {
             throw new Error('未能识别到有效的场景');
@@ -2215,28 +2212,13 @@ function splitScriptIntoScenes(script) {
 // 生成单个场景的分镜
 async function generateSceneStoryboard(scene, sceneIndex) {
     const prompt = `请为以下场景创建详细的分镜脚本。要求：
-1. 使用专业的分镜术语和格式
-2. 每个分镜需包含：
-   - 画面构图（俯视、平视、仰视等）
-   - 场景布局描述
-   - 人物表情和动作
-   - 对话气泡位置（如果有对话）
-   - 特效和背景处理
-3. 注意以下要点：
-   - 画面的节奏感和张力
-   - 分镜大小的变化（大格、小格的搭配）
-   - 人物在画面中的位置和比例
-   - 连续分镜之间的流畅过渡
-   - 重要情节的重点突出
-4. 每个分镜描述要简洁但具体
-5. 考虑漫画的视觉表现力和阅读体验
+1. 使用专业的分镜术语（如 LS、MS、CU 等）
+2. 每个分镜包含：镜头类型、场景描述、人物动作、对话（如果有）
+3. 注意镜头的连续性和节奏感
+4. 每个分镜描述简洁但具体
+5. 考虑漫画的视觉效果和表现力
 
-场景内容：${scene}
-
-请按照以下格式输出每个分镜：
-分镜1：[画面布局] - [构图角度] - [具体描述]
-分镜2：[画面布局] - [构图角度] - [具体描述]
-...以此类推`;
+场景内容：${scene}`;
 
     try {
         const response = await callDeepseekAPI(prompt);
@@ -2574,5 +2556,3 @@ function addSceneMarkers(scriptElement) {
         scene.prepend(marker);
     });
 }
-
-```
