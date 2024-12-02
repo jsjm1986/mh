@@ -865,3 +865,205 @@ button:hover {
     0% { transform: rotate(0deg); }
     100% { transform: rotate(360deg); }
 }
+
+/* 加载指示器 */
+.loading-indicator {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background-color: rgba(0, 0, 0, 0.5);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    z-index: 9999;
+}
+
+.loading-content {
+    background-color: white;
+    padding: 20px 40px;
+    border-radius: 10px;
+    text-align: center;
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+}
+
+.spinner {
+    width: 40px;
+    height: 40px;
+    margin: 0 auto 10px;
+    border: 4px solid #f3f3f3;
+    border-top: 4px solid var(--primary-color);
+    border-radius: 50%;
+    animation: spin 1s linear infinite;
+}
+
+.loading-content p {
+    margin: 0;
+    color: var(--secondary-color);
+    font-size: 1.1em;
+}
+
+/* 错误消息 */
+.error-message {
+    position: fixed;
+    top: 20px;
+    right: 20px;
+    background-color: #fff;
+    padding: 15px 25px;
+    border-radius: 8px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+    border-left: 4px solid var(--danger-color);
+    z-index: 9999;
+    animation: slideIn 0.3s ease-out;
+}
+
+.error-content {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.error-content i {
+    color: var(--danger-color);
+    font-size: 1.5em;
+}
+
+.error-content p {
+    margin: 0;
+    color: var(--secondary-color);
+}
+
+/* 成功消息 */
+.success-message {
+    position: fixed;
+    top: 20px;
+    right: 20px;
+    background-color: #fff;
+    padding: 15px 25px;
+    border-radius: 8px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+    border-left: 4px solid var(--success-color);
+    z-index: 9999;
+    animation: slideIn 0.3s ease-out;
+}
+
+.success-content {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.success-content i {
+    color: var(--success-color);
+    font-size: 1.5em;
+}
+
+.success-content p {
+    margin: 0;
+    color: var(--secondary-color);
+}
+
+/* 动画 */
+@keyframes spin {
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
+}
+
+@keyframes slideIn {
+    from {
+        transform: translateX(100%);
+        opacity: 0;
+    }
+    to {
+        transform: translateX(0);
+        opacity: 1;
+    }
+}
+
+@keyframes slideOut {
+    from {
+        transform: translateX(0);
+        opacity: 1;
+    }
+    to {
+        transform: translateX(100%);
+        opacity: 0;
+    }
+}
+
+/* 剧本样式 */
+#storyScript {
+    background: white;
+    padding: 20px;
+    border-radius: var(--border-radius);
+    box-shadow: var(--box-shadow);
+    margin-top: 20px;
+}
+
+.scene-title {
+    color: var(--primary-color);
+    font-size: 1.3em;
+    margin: 25px 0 15px;
+    padding-bottom: 8px;
+    border-bottom: 2px solid var(--primary-color);
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.scene-title:first-child {
+    margin-top: 0;
+}
+
+.scene-marker {
+    background: var(--primary-color);
+    color: white;
+    padding: 4px 8px;
+    border-radius: 4px;
+    font-size: 0.8em;
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+}
+
+.scene-description {
+    background: #f8f9fa;
+    padding: 12px 15px;
+    border-radius: 6px;
+    margin: 10px 0;
+    color: #2c3e50;
+    font-style: italic;
+}
+
+.dialogue {
+    margin: 12px 0;
+    line-height: 1.6;
+}
+
+.character {
+    color: var(--primary-color);
+    font-weight: bold;
+    margin-right: 8px;
+}
+
+.action-note {
+    color: #666;
+    font-style: italic;
+    margin: 0 4px;
+}
+
+@media (max-width: 768px) {
+    #storyScript {
+        padding: 15px;
+    }
+    
+    .scene-title {
+        font-size: 1.2em;
+        margin: 20px 0 12px;
+    }
+    
+    .scene-description {
+        padding: 10px 12px;
+    }
+}

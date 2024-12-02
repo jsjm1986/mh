@@ -12,8 +12,8 @@ const CONFIG = {
 
     // 生成参数
     GENERATION_PARAMS: {
-        temperature: 0.7,
-        max_tokens: 1000,
+        temperature: 0.9,
+        max_tokens: 4000,
         top_p: 0.9,
         frequency_penalty: 0.5,
         presence_penalty: 0.5

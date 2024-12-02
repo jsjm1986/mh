@@ -6,21 +6,66 @@ let historyBackground = '';
 let characters = [];
 let apiKey = null; // 全局变量，存储API密钥
 
-// 工具函数
-const setLoading = (elementId, loading) => {
+// 工具函数：状态管理
+function showLoading(message = '处理中...') {
+    const loadingDiv = document.createElement('div');
+    loadingDiv.id = 'loadingIndicator';
+    loadingDiv.className = 'loading-indicator';
+    loadingDiv.innerHTML = `
+        <div class="loading-content">
+            <div class="spinner"></div>
+            <p>${message}</p>
+        </div>
+    `;
+    document.body.appendChild(loadingDiv);
+}
+
+function hideLoading() {
+    const loadingDiv = document.getElementById('loadingIndicator');
+    if (loadingDiv) {
+        loadingDiv.remove();
+    }
+}
+
+function showError(message) {
+    hideLoading();
+    const errorDiv = document.createElement('div');
+    errorDiv.className = 'error-message';
+    errorDiv.innerHTML = `
+        <div class="error-content">
+            <i class="fas fa-exclamation-circle"></i>
+            <p>${message}</p>
+        </div>
+    `;
+    document.body.appendChild(errorDiv);
+    setTimeout(() => {
+        errorDiv.remove();
+    }, 5000);
+}
+
+function showSuccess(message) {
+    hideLoading();
+    const successDiv = document.createElement('div');
+    successDiv.className = 'success-message';
+    successDiv.innerHTML = `
+        <div class="success-content">
+            <i class="fas fa-check-circle"></i>
+            <p>${message}</p>
+        </div>
+    `;
+    document.body.appendChild(successDiv);
+    setTimeout(() => {
+        successDiv.remove();
+    }, 3000);
+}
+
+// 设置加载状态
+function setLoading(elementId, loading) {
     const element = document.getElementById(elementId);
-    if (loading) {
+    if (element && loading) {
         element.innerHTML = '<div class="loading">生成中，请稍候...</div>';
     }
-};
-
-const showError = (message) => {
-    alert(`错误: ${message}`);
-};
-
-const showSuccess = (message) => {
-    alert(message);
-};
+}
 
 // 检查是否已经登录
 window.onload = function() {
@@ -1782,4 +1827,90 @@ ${character}
         showError(error.message || '故事创作遇到了问题，请重试');
         return null;
     }
+}
+
+// 生成故事剧本
+async function generateScript() {
+    try {
+        const storyElement = document.getElementById('storyOutput');
+        if (!storyElement || !storyElement.value.trim()) {
+            throw new Error('请先完成故事的创作（第三步）');
+        }
+
+        showLoading('正在创作剧本...');
+
+        const story = storyElement.value.trim();
+        const prompt = `请将以下故事改编为简洁的剧本格式。要求：
+1. 场景描述简短精炼，每个场景不超过50字
+2. 对话要简明扼要，突出重点
+3. 整体结构清晰，分为3-5个主要场景
+4. 每个场景包含：场景说明、人物对话和关键动作
+5. 注重戏剧冲突，突出故事主线
+6. 总字数控制在1000字以内
+
+故事内容：${story}`;
+
+        const response = await callDeepseekAPI(prompt);
+        if (!response) {
+            throw new Error('剧本生成失败，请重试');
+        }
+
+        // 格式化剧本内容
+        const formattedScript = formatScript(response);
+        
+        // 显示剧本
+        const scriptElement = document.getElementById('storyScript');
+        if (scriptElement) {
+            scriptElement.innerHTML = formattedScript;
+            
+            // 添加场景标记
+            addSceneMarkers(scriptElement);
+        }
+
+        showSuccess('剧本创作完成！');
+        
+        // 保存到localStorage
+        saveToLocalStorage('script', formattedScript);
+        
+        return formattedScript;
+    } catch (error) {
+        console.error('创作剧本时出错:', error);
+        showError(error.message || '剧本创作遇到了问题，请重试');
+        return null;
+    }
+}
+
+// 格式化剧本
+function formatScript(script) {
+    // 移除多余的空行
+    let formatted = script.replace(/\n{3,}/g, '\n\n');
+    
+    // 为场景添加样式
+    formatted = formatted.replace(/场景\s*\d+[：:]/g, match => 
+        `<h3 class="scene-title">${match}</h3>`);
+    
+    // 为场景说明添加样式
+    formatted = formatted.replace(/【[^】]+】/g, match => 
+        `<div class="scene-description">${match}</div>`);
+    
+    // 为对话添加样式
+    formatted = formatted.replace(/([^：:：\n]+)(：|:|：)([^\n]+)/g, 
+        '<div class="dialogue"><span class="character">$1$2</span>$3</div>');
+    
+    // 为动作说明添加样式
+    formatted = formatted.replace(/（[^）]+）/g, match => 
+        `<span class="action-note">${match}</span>`);
+    
+    return formatted;
+}
+
+// 添加场景标记
+function addSceneMarkers(scriptElement) {
+    const scenes = scriptElement.getElementsByClassName('scene-title');
+    Array.from(scenes).forEach((scene, index) => {
+        const marker = document.createElement('div');
+        marker.className = 'scene-marker';
+        marker.innerHTML = `<i class="fas fa-film"></i> ${index + 1}`;
+        scene.prepend(marker);
+    });
 }
